@@ -1,1 +1,1 @@
-[](/use.png)
+![alt image](/use.png)
