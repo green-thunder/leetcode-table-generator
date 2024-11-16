@@ -67,28 +67,28 @@ class SolutionUpdater:
         """
         Updates or adds new rows to the Markdown table at a specified index.
         If the index exists, appends new language solutions to the "Solution" column.
+        Ensures the rows are sorted by the index.
         """
-        # Read existing file
         if os.path.exists(self.file_path):
             with open(self.file_path, 'r') as file:
                 content = file.readlines()
         else:
             content = []
 
-        # Find table start
+
         header_index = None
         for i, line in enumerate(content):
             if line.strip().startswith("|#"):
                 header_index = i
                 break
 
-        # Ensure the header exists
+
         if header_index is None:
             content.append("|#      | Title | Solution | Difficulty |\n")
             content.append("|-------|-------|----------|------------|\n")
             header_index = len(content) - 2
 
-        # Format new solutions
+        
         for solution in new_solutions:
             index = solution.get("index", None)
             if index is None:
@@ -104,19 +104,19 @@ class SolutionUpdater:
                     try:
                         existing_index = int(line.split("|")[1].strip())
                     except ValueError:
-                        continue  # Skip lines that don't have a valid index
+                        continue  
                     if existing_index == index:
-                        # Existing row, update or append language solution
+
                         row_found = True
                         parts = line.strip().split("|")
 
-                        # Retain existing title and difficulty
+
                         existing_title_md = parts[2].strip()
                         existing_title = self.extract_title_from_markdown(existing_title_md)
                         existing_solutions = parts[3].strip()
                         existing_difficulty = parts[4].strip()
 
-                        # Use existing title if not provided
+
                         if "title" in solution and solution["title"].strip():
                             title = solution["title"]
                         else:
@@ -131,40 +131,39 @@ class SolutionUpdater:
                         else:
                             difficulty = existing_difficulty
 
-                        # Generate the solution file path
+
                         solution_path = self.format_solution_filename(title, index, solution["language"])
 
-                        # Update solutions
+
                         if f"[{language}]({solution_path})" not in existing_solutions:
                             updated_solutions = f"{existing_solutions}, [{language}]({solution_path})"
                             parts[3] = f" {updated_solutions} "
                         else:
-                            parts[3] = f" {existing_solutions} "  # No change
+                            parts[3] = f" {existing_solutions} "  
 
                         # Update title and difficulty in parts
                         parts[2] = f" [{title}]({link}) "
                         parts[4] = f" {difficulty} "
 
-                        # Reconstruct the line
                         content[j] = "|".join(parts) + "\n"
                         break
 
             if not row_found:
-                # Title and difficulty from solution or defaults
                 title = solution.get("title", "Unknown Title")
                 difficulty = self.difficulty_emojis.get(
                     solution.get("difficulty", "unknown").lower(),
                     solution.get("difficulty", "Unknown")
                 )
 
-                # Generate the solution file path
                 solution_path = self.format_solution_filename(title, index, solution["language"])
 
-                # Create a new row
                 row = f"|{index} | [{title}]({link}) | [{language}]({solution_path}) | {difficulty} |\n"
                 content.insert(header_index + 2, row)
 
-        # Write updated content back to the file
+        table_rows = content[header_index + 2:]
+        sorted_rows = sorted(table_rows, key=lambda x: int(x.split("|")[1].strip()))
+        content = content[:header_index + 2] + sorted_rows
+
         with open(self.file_path, 'w') as file:
             file.writelines(content)
 
