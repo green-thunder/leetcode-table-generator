@@ -1,1 +1,1 @@
-[use.png]
+[](/use.png)
