@@ -43,7 +43,9 @@ class SolutionUpdater:
         Formats the solution file name dynamically based on the title, index, and language.
         """
         extension = self.file_extensions.get(language.lower(), "")
-        sanitized_title = title.lower().replace(" ", "_")
+        sanitized_title = re.sub(r'\W+', '_', title.lower()).strip('_')  # Remove non-word characters
+        if not sanitized_title:
+            sanitized_title = 'solution'  # Default name if title is empty after sanitization
         directory = f"Algorithms/{language.lower()}/"
         filename = f"{sanitized_title}_{index}.{extension}"
         return os.path.join(directory, filename)
@@ -66,10 +68,34 @@ class SolutionUpdater:
         """
         Generates a LeetCode slug dynamically from a problem title.
         """
-        # Remove parentheses and their contents, replace spaces with hyphens, and lowercase the title
-        slug = re.sub(r'\s+', '-', title)  # Replace spaces with hyphens
+        slug = re.sub(r'\s+', '-', title.strip())  # Replace spaces with hyphens
         slug = re.sub(r'[^\w\-]', '', slug)  # Remove special characters except hyphens
         return slug.lower()
+
+    def extract_difficulty_from_display(self, difficulty_display):
+        """
+        Extracts the difficulty level from the display string.
+        """
+        for key, value in self.difficulty_emojis.items():
+            if value == difficulty_display:
+                return key.capitalize()
+        return difficulty_display
+
+    def map_difficulty_input(self, difficulty_input):
+        """
+        Maps user input to difficulty level.
+        Accepts full words or first letters (E/e, M/m, H/h).
+        """
+        difficulty_input = difficulty_input.strip().lower()
+        if difficulty_input in ['e', 'easy']:
+            return 'Easy'
+        elif difficulty_input in ['m', 'medium']:
+            return 'Medium'
+        elif difficulty_input in ['h', 'hard']:
+            return 'Hard'
+        else:
+            print("Invalid difficulty input. Please enter 'Easy', 'Medium', or 'Hard' (or 'E', 'M', 'H').")
+            return None  # Signal that the input was invalid
 
     def update_or_add_solutions(self, new_solutions):
         """
@@ -99,17 +125,23 @@ class SolutionUpdater:
 
         # Format new solutions
         for solution in new_solutions:
+            # Prompt for missing index
             index = solution.get("index", None)
             if index is None:
-                index = int(input(f"Enter the index for the solution: "))
+                index = int(input(f"Enter the index for the problem in leetcode: "))
 
-            # Generate slug dynamically if not provided
-            title = solution.get("title", "Unknown Title")
-            slug = solution.get("slug", self.generate_slug_from_title(title))
-            language = self.language_icons.get(solution["language"].lower(), solution["language"])
-            link = self.create_leetcode_link(slug)
+            # Initialize variables
+            title = solution.get("title", "").strip()
+            difficulty = solution.get("difficulty", "").strip()
+            slug = solution.get("slug", "").strip()
+            language = solution.get("language", "").strip()
 
-            row_found = False
+            # Flags to check if existing row is found
+            existing_row_found = False
+            existing_title = None
+            existing_difficulty_display = None
+
+            # Search for existing row to extract missing data
             for j, line in enumerate(content[header_index + 2:], start=header_index + 2):
                 if line.startswith("|"):
                     try:
@@ -117,61 +149,71 @@ class SolutionUpdater:
                     except ValueError:
                         continue  # Skip lines that don't have a valid index
                     if existing_index == index:
-                        # Existing row, update or append language solution
-                        row_found = True
+                        # Existing row found
+                        existing_row_found = True
                         parts = line.strip().split("|")
-
-                        # Retain existing title and difficulty
                         existing_title_md = parts[2].strip()
                         existing_title = self.extract_title_from_markdown(existing_title_md)
-                        existing_solutions = parts[3].strip()
-                        existing_difficulty = parts[4].strip()
-
-                        # Use existing title if not provided
-                        if "title" in solution and solution["title"].strip():
-                            title = solution["title"]
-                        else:
-                            title = existing_title
-
-                        # Use existing difficulty if not provided
-                        if "difficulty" in solution and solution["difficulty"].strip():
-                            difficulty = self.difficulty_emojis.get(
-                                solution["difficulty"].lower(),
-                                solution["difficulty"]
-                            )
-                        else:
-                            difficulty = existing_difficulty
-
-                        # Generate the solution file path
-                        solution_path = self.format_solution_filename(title, index, solution["language"])
-
-                        # Update solutions
-                        if f"[{language}]({solution_path})" not in existing_solutions:
-                            updated_solutions = f"{existing_solutions}, [{language}]({solution_path})"
-                            parts[3] = f" {updated_solutions} "
-                        else:
-                            parts[3] = f" {existing_solutions} "  # No change
-
-                        # Update title and difficulty in parts
-                        parts[2] = f" [{title}]({link}) "
-                        parts[4] = f" {difficulty} "
-
-                        # Reconstruct the line
-                        content[j] = "|".join(parts) + "\n"
+                        existing_difficulty_display = parts[4].strip()
                         break
 
-            if not row_found:
-                # Title and difficulty from solution or defaults
-                difficulty = self.difficulty_emojis.get(
-                    solution.get("difficulty", "unknown").lower(),
-                    solution.get("difficulty", "Unknown")
-                )
+            # Use existing title if not provided
+            if not title:
+                if existing_title:
+                    title = existing_title
+                else:
+                    title = input(f"Enter the title for problem #{index}: ").strip()
 
-                # Generate the solution file path
-                solution_path = self.format_solution_filename(title, index, solution["language"])
+            # Generate slug if not provided
+            if not slug:
+                slug = self.generate_slug_from_title(title)
 
-                # Create a new row
-                row = f"|{index} | [{title}]({link}) | [{language}]({solution_path}) | {difficulty} |\n"
+            # Prompt for missing language
+            if not language:
+                language = input(f"Enter the language for solution #{index} (e.g., Python, Java): ").strip()
+                if not language:
+                    language = 'Python'  # Default to Python if user inputs nothing
+
+            # Format language display
+            language_display = self.language_icons.get(language.lower(), language)
+
+            # Use existing difficulty if not provided
+            if not difficulty:
+                if existing_difficulty_display:
+                    difficulty = self.extract_difficulty_from_display(existing_difficulty_display)
+                else:
+                    while True:
+                        difficulty_input = input(f"Enter the difficulty of problem #{index} (Easy, Medium, Hard): ").strip()
+                        mapped_difficulty = self.map_difficulty_input(difficulty_input)
+                        if mapped_difficulty:
+                            difficulty = mapped_difficulty
+                            break
+
+            # Format difficulty display
+            difficulty_display = self.difficulty_emojis.get(difficulty.lower(), difficulty)
+
+            # Generate LeetCode link and solution file path
+            link = self.create_leetcode_link(slug)
+            solution_path = self.format_solution_filename(title, index, language)
+
+            # Now, proceed to update or add the row
+            if existing_row_found:
+                # Update existing row
+                parts[2] = f" [{title}]({link}) "
+                existing_solutions = parts[3].strip()
+                if f"[{language_display}]({solution_path})" not in existing_solutions:
+                    if existing_solutions:
+                        updated_solutions = f"{existing_solutions}, [{language_display}]({solution_path})"
+                    else:
+                        updated_solutions = f"[{language_display}]({solution_path})"
+                    parts[3] = f" {updated_solutions} "
+                else:
+                    parts[3] = f" {existing_solutions} "
+                parts[4] = f" {difficulty_display} "
+                content[j] = "|".join(parts) + "\n"
+            else:
+                # Add new row
+                row = f"|{index} | [{title}]({link}) | [{language_display}]({solution_path}) | {difficulty_display} |\n"
                 content.insert(header_index + 2, row)
 
         # Sort the table rows by index
